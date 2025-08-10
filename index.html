@@ -146,7 +146,9 @@ let rows = [];
     const res = await fetch('https://raw.githubusercontent.com/ss1111119/indigenous-language-exam-stats/main/data.json');
     rows = await res.json(); // 你的 data.json 為陣列
     boot();
-  }catch(e){ console.error('讀取 data.json 失敗：', e); }
+  }catch(e){
+    console.error('讀取 data.json 失敗：', e);
+  }
 })();
 
 function selfTest(){
@@ -159,39 +161,95 @@ function boot(){
   // 年度下拉
   const yearSel = document.getElementById('yearFilter');
   const years = [...new Set(rows.map(r=>r.year))].sort((a,b)=>a-b);
-  for(const y of years){ const o=document.createElement('option'); o.value=String(y); o.textContent=String(y); yearSel.appendChild(o); }
+  for(const y of years){
+    const o=document.createElement('option');
+    o.value=String(y); o.textContent=String(y);
+    yearSel.appendChild(o);
+  }
 
-  setKPI();
+  setKPIByFilters();
   buildTrendChart();
   buildStacked();
   buildGrouped();
   buildSplit();
   renderTable();
   selfTest();
+  runTests(); // 簡易測試
 
   // 綁定事件
-  document.getElementById('yearFilter').addEventListener('change', renderTable);
-  document.getElementById('termFilter').addEventListener('change', renderTable);
+  document.getElementById('yearFilter').addEventListener('change', ()=>{
+    renderTable(); setKPIByFilters();
+  });
+  document.getElementById('termFilter').addEventListener('change', ()=>{
+    renderTable(); setKPIByFilters();
+  });
   document.getElementById('metricSelect').addEventListener('change', buildTrendChart);
-  document.getElementById('levelSelect').addEventListener('change', buildTrendChart);
+  document.getElementById('levelSelect').addEventListener('change', ()=>{
+    buildTrendChart(); setKPIByFilters();
+  });
   document.getElementById('resetBtn').addEventListener('click', ()=>{
     document.getElementById('metricSelect').value='passRate';
     Array.from(document.getElementById('levelSelect').options).forEach(o=> o.selected=true);
-    buildTrendChart();
+    buildTrendChart(); setKPIByFilters();
   });
   document.getElementById('downloadCsvBtn').addEventListener('click', downloadCSV);
 }
 
-// ===== KPI（114 第一次 總計） =====
-function setKPI(){
-  const k = rows.find(r=>r.year===114 && r.term==='第一次' && r.level==='總計');
-  if(!k) return;
+// ===== KPI（會依下拉選單 + 級別變動） =====
+function setKPIByFilters(){
+  const yf = document.getElementById('yearFilter').value; // 'all' or year string
+  const tf = document.getElementById('termFilter').value; // 'all' or term
+  const selectedLevels = Array.from(document.getElementById('levelSelect').selectedOptions).map(o=>o.value);
+
+  // 取得目標年度/場次（偏好順序：第一次 > 第二次 > 全年）
+  let target = null;
+  if(yf !== 'all' && tf !== 'all'){
+    target = { year: Number(yf), term: tf };
+  } else if(yf !== 'all'){
+    const pref = ['第一次','第二次','全年'];
+    for(const p of pref){
+      if(rows.some(r=>String(r.year)===yf && r.term===p)) { target = { year:Number(yf), term:p }; break; }
+    }
+  } else {
+    const yearsDesc = [...new Set(rows.map(r=>r.year))].sort((a,b)=>b-a);
+    const pref = ['第一次','第二次','全年'];
+    outer: for(const y of yearsDesc){
+      for(const p of pref){ if(rows.some(r=>r.year===y && r.term===p)){ target={year:y, term:p}; break outer; } }
+    }
+  }
+  if(!target) return;
+
+  // 範圍列（同年同場次），排除『總計』與中高級細分
+  const scopeRows = rows.filter(r=> r.year===target.year && r.term===target.term && !r.level.includes('中高級-') && r.level!=='總計');
+
+  // 僅保留被選到的級別
+  const filtered = scopeRows.filter(r=> selectedLevels.includes(r.level));
+
+  // 若全選且有『總計』，用『總計』（避免四捨五入差）
+  let k = null;
+  const allLevels = ['初級','中級','中高級','高級','優級'];
+  const isAllSelected = allLevels.every(l=> selectedLevels.includes(l)) || selectedLevels.length===0;
+  if(isAllSelected){
+    k = rows.find(r=> r.year===target.year && r.term===target.term && r.level==='總計');
+  }
+
+  // 否則動態彙總（加權計算比率）
+  if(!k){
+    const sum = (arr, key)=> arr.reduce((acc,x)=> acc + (Number(x[key]) || 0), 0);
+    const applied = sum(filtered,'applied');
+    const attended = sum(filtered,'attended');
+    const passed   = sum(filtered,'passed');
+    const examRate = applied>0 ? (attended/applied*100) : null;
+    const passRate = attended>0 ? (passed/attended*100) : null;
+    k = { applied, attended, passed, examRate, passRate };
+  }
+
   const fmtInt = (n)=> n==null? '—' : Number(n).toLocaleString('zh-TW');
   const fmtPct = (n)=> n==null? '—' : Number(n).toFixed(2)+'%';
-  document.getElementById('kpiApplied').textContent = fmtInt(k.applied);
+  document.getElementById('kpiApplied').textContent  = fmtInt(k.applied);
   document.getElementById('kpiAttended').textContent = fmtInt(k.attended);
   document.getElementById('kpiExamRate').textContent = fmtPct(k.examRate);
-  document.getElementById('kpiPassed').textContent = fmtInt(k.passed);
+  document.getElementById('kpiPassed').textContent   = fmtInt(k.passed);
   document.getElementById('kpiPassRate').textContent = fmtPct(k.passRate);
 }
 
@@ -211,9 +269,14 @@ function buildTrendChart(){
   const lvls = ['初級','中級','中高級','高級','優級'].filter(l=>levelsSel.includes(l));
   const datasets = lvls.map((lvl,i)=>({
     label:lvl,
-    data: labels.map(lbl=>{ const [y,t]=lbl.split('-'); const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl); return rec? rec[metric]: null; }),
+    data: labels.map(lbl=>{
+      const [y,t]=lbl.split('-');
+      const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl);
+      return rec? rec[metric]: null;
+    }),
     borderColor:palette(i), backgroundColor:palette(i), spanGaps:true
   }));
+
   trendChart && trendChart.destroy();
   trendChart = new Chart(ctx,{
     type:'line',
@@ -221,7 +284,10 @@ function buildTrendChart(){
     options:{
       responsive:true, maintainAspectRatio:false,
       interaction:{mode:'nearest',intersect:false},
-      scales:{ y:{ grid:{color:'rgba(255,255,255,0.07)'}, ticks:{ callback:v=> metric.includes('Rate')? v+'%': v } }, x:{ grid:{display:false} } },
+      scales:{
+        y:{ grid:{color:'rgba(255,255,255,0.07)'}, ticks:{ callback:v=> metric.includes('Rate')? v+'%': v } },
+        x:{ grid:{display:false} }
+      },
       plugins:{ legend:{ position:'bottom' } }
     }
   });
@@ -235,7 +301,16 @@ function buildStacked(){
   const labels = [...new Set(rows.map(r=>`${r.year}-${r.term}`))].filter(l=>!l.endsWith('合計')).sort();
   const lvls=['初級','中級','中高級','高級','優級'];
   const palette = (i)=> `hsl(${(i*57+10)%360} 70% 55%)`;
-  const datasets = lvls.map((lvl,i)=>({ label:lvl, backgroundColor:palette(i), data: labels.map(lbl=>{ const [y,t]=lbl.split('-'); const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl); return rec? rec.applied:0; }) }));
+  const datasets = lvls.map((lvl,i)=>({
+    label:lvl,
+    backgroundColor:palette(i),
+    data: labels.map(lbl=>{
+      const [y,t]=lbl.split('-');
+      const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl);
+      return rec? rec.applied:0;
+    })
+  }));
+
   stackedChart = new Chart(ctx,{
     type:'bar',
     data:{labels,datasets},
@@ -255,7 +330,15 @@ function buildGrouped(){
   const labels = [...new Set(rows.map(r=>`${r.year}-${r.term}`))].sort();
   const lvls=['初級','中級','中高級','高級','優級'];
   const palette=(i)=>`hsl(${(i*57+200)%360} 70% 55%)`;
-  const datasets = lvls.map((lvl,i)=>({ label:lvl, backgroundColor:palette(i), data: labels.map(lbl=>{ const [y,t]=lbl.split('-'); const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl); return rec? rec.passRate: null; }) }));
+  const datasets = lvls.map((lvl,i)=>({
+    label:lvl, backgroundColor:palette(i),
+    data: labels.map(lbl=>{
+      const [y,t]=lbl.split('-');
+      const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl);
+      return rec? rec.passRate: null;
+    })
+  }));
+
   groupedChart = new Chart(ctx,{
     type:'bar',
     data:{labels,datasets},
@@ -274,12 +357,22 @@ function buildSplit(){
   splitChart && splitChart.destroy();
   const items = rows.filter(r=>r.year===114 && r.term==='第一次' && r.level.startsWith('中高級-'));
   const labels = items.map(i=>i.level.replace('中高級-',''));
+
   splitChart = new Chart(ctx,{
     type:'bar',
-    data:{ labels, datasets:[ {label:'通過人數', data: items.map(i=>i.passed||0)}, {label:'通過率（%）', data: items.map(i=>i.passRate||0), type:'line', yAxisID:'y1'} ] },
+    data:{
+      labels,
+      datasets:[
+        {label:'通過人數', data: items.map(i=>i.passed||0)},
+        {label:'通過率（%）', data: items.map(i=>i.passRate||0), type:'line', yAxisID:'y1'}
+      ]
+    },
     options:{
       responsive:true, maintainAspectRatio:false,
-      scales:{ y:{ position:'left', grid:{color:'rgba(255,255,255,0.07)'} }, y1:{ position:'right', grid:{display:false}, ticks:{ callback:v=> v+'%'} } },
+      scales:{
+        y:{ position:'left', grid:{color:'rgba(255,255,255,0.07)'} },
+        y1:{ position:'right', grid:{display:false}, ticks:{ callback:v=> v+'%'} }
+      },
       plugins:{ legend:{ position:'bottom'} }
     }
   });
@@ -323,7 +416,21 @@ function toCSV(){
 function downloadCSV(){
   const blob = new Blob([toCSV()], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='exam_stats_106_114.csv'; a.click(); URL.revokeObjectURL(url);
+  const a = document.createElement('a');
+  a.href=url; a.download='exam_stats_106_114.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ===== 簡易測試（不影響功能） =====
+function runTests(){
+  try{
+    console.assert(typeof trendChart?.update === 'function', 'trendChart 應建立完成');
+    console.assert(typeof stackedChart?.update === 'function', 'stackedChart 應建立完成');
+    console.assert(typeof groupedChart?.update === 'function', 'groupedChart 應建立完成');
+    console.assert(typeof splitChart?.update === 'function', 'splitChart 應建立完成');
+  }catch(e){
+    console.warn('Tests: 有些圖表尚未建立（可能資料不足某些級別/場次）', e);
+  }
 }
 </script>
 </body>
