@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>原住民族語言能力認證測驗統計（106～114 年）</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    :root{ --bg:#0b1020; --panel:#111831; --ink:#e7eaf3; --muted:#93a1bd; --accent:#7aa2f7; --grid:#253055; }
+    html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans TC',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,'Apple Color Emoji','Segoe UI Emoji'}
+    .wrap{max-width:1200px;margin:32px auto;padding:0 16px 64px}
+    h1{font-size:clamp(24px,3vw,36px);margin:0 0 8px}
+    p.lead{color:var(--muted);margin-top:0}
+    .grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+    .card{grid-column:span 12;background:var(--panel);border:1px solid var(--grid);border-radius:16px;padding:16px}
+    @media (min-width:900px){.span6{grid-column:span 6}.span4{grid-column:span 4}.span8{grid-column:span 8}}
+    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .kpi{display:grid;grid-template-columns:1fr auto;gap:4px;padding:12px 14px;border-radius:12px;background:#0f1731;border:1px solid var(--grid)}
+    .kpi .label{color:var(--muted);font-size:12px}
+    .kpi .value{font-size:18px;font-weight:700}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px}
+    select,button{background:#0e1836;color:var(--ink);border:1px solid var(--grid);border-radius:10px;padding:8px 12px}
+    button:hover{filter:brightness(1.1)}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{border-bottom:1px solid var(--grid);padding:8px 10px;text-align:right}
+    th:first-child,td:first-child{text-align:left}
+    thead th{position:sticky;top:0;background:var(--panel)}
+    .note{color:var(--muted);font-size:13px}
+    canvas{max-height:420px}
+    .chip{font-size:12px;color:var(--ink);opacity:.9;border:1px solid var(--grid);padding:4px 8px;border-radius:999px}
+    .foot{color:var(--muted);text-align:center;margin-top:24px}
+    a{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>原住民族語言能力認證測驗統計（106～114 年）</h1>
+    <p class="lead">互動圖表＋完整資料表。支援按年度/級別篩選、下載 CSV。資料來源：<code>data.json</code>。</p>
+
+    <div class="grid">
+      <div class="card span8">
+        <div class="row" style="justify-content:space-between;gap:12px">
+          <div class="toolbar">
+            <label class="chip">指標：
+              <select id="metricSelect">
+                <option value="passRate">通過率（%）</option>
+                <option value="examRate">應試率（%）</option>
+                <option value="applied">報名人數</option>
+                <option value="attended">應試人數</option>
+                <option value="passed">通過人數</option>
+              </select>
+            </label>
+            <label class="chip">級別：
+              <select id="levelSelect" multiple size="5" style="vertical-align:middle;min-width:120px">
+                <option value="初級" selected>初級</option>
+                <option value="中級" selected>中級</option>
+                <option value="中高級" selected>中高級</option>
+                <option value="高級" selected>高級</option>
+                <option value="優級" selected>優級</option>
+              </select>
+            </label>
+            <button id="resetBtn">重設篩選</button>
+            <button id="downloadCsvBtn">下載 CSV</button>
+          </div>
+        </div>
+        <h3 style="margin:10px 0 6px">年度趨勢（依級別）</h3>
+        <canvas id="trendChart"></canvas>
+        <p class="note">提示：可在圖例點擊顏色以隱藏/顯示某一級別。</p>
+      </div>
+
+      <div class="card span4">
+        <h3 style="margin:6px 0 12px">一覽 KPI（114 年第一次）</h3>
+        <div class="grid" style="grid-template-columns:repeat(2,1fr);gap:10px">
+          <div class="kpi"><div class="label">總報名</div><div class="value" id="kpiApplied">—</div></div>
+          <div class="kpi"><div class="label">總應試</div><div class="value" id="kpiAttended">—</div></div>
+          <div class="kpi"><div class="label">應試率</div><div class="value" id="kpiExamRate">—</div></div>
+          <div class="kpi"><div class="label">通過人數</div><div class="value" id="kpiPassed">—</div></div>
+          <div class="kpi" style="grid-column:span 2"><div class="label">通過率</div><div class="value" id="kpiPassRate">—</div></div>
+        </div>
+        <p class="note" style="margin-top:10px">含中高級子項（聽說、讀寫）僅於 114 年第一次提供，下方專區顯示細分。</p>
+      </div>
+
+      <div class="card span6">
+        <h3 style="margin:6px 0 12px">級別分布（報名人數，堆疊）</h3>
+        <canvas id="stackedChart"></canvas>
+      </div>
+
+      <div class="card span6">
+        <h3 style="margin:6px 0 12px">通過率比較（各年度 × 級別）</h3>
+        <canvas id="groupedChart"></canvas>
+      </div>
+
+      <div class="card span12">
+        <h3 style="margin:6px 0 12px">114 年第一次：中高級細分</h3>
+        <canvas id="splitChart"></canvas>
+      </div>
+
+      <div class="card span12">
+        <h3 style="margin:6px 0 12px">完整資料表</h3>
+        <div class="toolbar" style="margin-bottom:8px">
+          <label class="chip">年度：
+            <select id="yearFilter">
+              <option value="all" selected>全部</option>
+            </select>
+          </label>
+          <label class="chip">場次：
+            <select id="termFilter">
+              <option value="all" selected>全部</option>
+              <option value="第一次">第一次</option>
+              <option value="第二次">第二次</option>
+              <option value="全年">全年</option>
+            </select>
+          </label>
+        </div>
+        <div style="overflow:auto;max-height:520px;border:1px solid var(--grid);border-radius:12px">
+          <table id="dataTable">
+            <thead>
+              <tr>
+                <th>年度</th>
+                <th>場次</th>
+                <th>級別</th>
+                <th>報名人數</th>
+                <th>應試人數</th>
+                <th>應試率</th>
+                <th>通過人數</th>
+                <th>通過率</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <p class="foot">© 106–114 年度統計可視化 | 以 Chart.js 製作，部署於 GitHub Pages</p>
+  </div>
+
+<script>
+// ===== 讀取 data.json 並初始化 =====
+let rows = [];
+(async function init(){
+  try{
+    const res = await fetch('https://raw.githubusercontent.com/ss1111119/indigenous-language-exam-stats/main/data.json');
+    rows = await res.json(); // 你的 data.json 為陣列
+    boot();
+  }catch(e){ console.error('讀取 data.json 失敗：', e); }
+})();
+
+function selfTest(){
+  console.assert(Array.isArray(rows) && rows.length>0, 'rows 應為非空陣列');
+  const lbls = [...new Set(rows.map(r=>`${r.year}-${r.term}`))];
+  console.assert(lbls.length>0, '應能產生年度/場次標籤');
+}
+
+function boot(){
+  // 年度下拉
+  const yearSel = document.getElementById('yearFilter');
+  const years = [...new Set(rows.map(r=>r.year))].sort((a,b)=>a-b);
+  for(const y of years){ const o=document.createElement('option'); o.value=String(y); o.textContent=String(y); yearSel.appendChild(o); }
+
+  setKPI();
+  buildTrendChart();
+  buildStacked();
+  buildGrouped();
+  buildSplit();
+  renderTable();
+  selfTest();
+
+  // 綁定事件
+  document.getElementById('yearFilter').addEventListener('change', renderTable);
+  document.getElementById('termFilter').addEventListener('change', renderTable);
+  document.getElementById('metricSelect').addEventListener('change', buildTrendChart);
+  document.getElementById('levelSelect').addEventListener('change', buildTrendChart);
+  document.getElementById('resetBtn').addEventListener('click', ()=>{
+    document.getElementById('metricSelect').value='passRate';
+    Array.from(document.getElementById('levelSelect').options).forEach(o=> o.selected=true);
+    buildTrendChart();
+  });
+  document.getElementById('downloadCsvBtn').addEventListener('click', downloadCSV);
+}
+
+// ===== KPI（114 第一次 總計） =====
+function setKPI(){
+  const k = rows.find(r=>r.year===114 && r.term==='第一次' && r.level==='總計');
+  if(!k) return;
+  const fmtInt = (n)=> n==null? '—' : Number(n).toLocaleString('zh-TW');
+  const fmtPct = (n)=> n==null? '—' : Number(n).toFixed(2)+'%';
+  document.getElementById('kpiApplied').textContent = fmtInt(k.applied);
+  document.getElementById('kpiAttended').textContent = fmtInt(k.attended);
+  document.getElementById('kpiExamRate').textContent = fmtPct(k.examRate);
+  document.getElementById('kpiPassed').textContent = fmtInt(k.passed);
+  document.getElementById('kpiPassRate').textContent = fmtPct(k.passRate);
+}
+
+// ===== 年度趨勢（折線） =====
+let trendChart;
+function buildTrendChart(){
+  const ctx = document.getElementById('trendChart');
+  const metric = document.getElementById('metricSelect').value;
+  const levelsSel = Array.from(document.getElementById('levelSelect').selectedOptions).map(o=>o.value);
+  const termOrder = { '全年':0, '第一次':1, '第二次':2 };
+  const labels = [...new Set(rows.map(r=>`${r.year}-${r.term}`))].sort((a,b)=>{
+    const [ya,ta]=a.split('-'); const [yb,tb]=b.split('-');
+    if(ya!==yb) return Number(ya)-Number(yb);
+    return termOrder[ta]-termOrder[tb];
+  });
+  const palette = (i)=> `hsl(${(i*57)%360} 70% 60%)`;
+  const lvls = ['初級','中級','中高級','高級','優級'].filter(l=>levelsSel.includes(l));
+  const datasets = lvls.map((lvl,i)=>({
+    label:lvl,
+    data: labels.map(lbl=>{ const [y,t]=lbl.split('-'); const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl); return rec? rec[metric]: null; }),
+    borderColor:palette(i), backgroundColor:palette(i), spanGaps:true
+  }));
+  trendChart && trendChart.destroy();
+  trendChart = new Chart(ctx,{
+    type:'line',
+    data:{labels,datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'nearest',intersect:false},
+      scales:{ y:{ grid:{color:'rgba(255,255,255,0.07)'}, ticks:{ callback:v=> metric.includes('Rate')? v+'%': v } }, x:{ grid:{display:false} } },
+      plugins:{ legend:{ position:'bottom' } }
+    }
+  });
+}
+
+// ===== 堆疊長條（各年度報名人數分布） =====
+let stackedChart;
+function buildStacked(){
+  const ctx=document.getElementById('stackedChart');
+  stackedChart && stackedChart.destroy();
+  const labels = [...new Set(rows.map(r=>`${r.year}-${r.term}`))].filter(l=>!l.endsWith('合計')).sort();
+  const lvls=['初級','中級','中高級','高級','優級'];
+  const palette = (i)=> `hsl(${(i*57+10)%360} 70% 55%)`;
+  const datasets = lvls.map((lvl,i)=>({ label:lvl, backgroundColor:palette(i), data: labels.map(lbl=>{ const [y,t]=lbl.split('-'); const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl); return rec? rec.applied:0; }) }));
+  stackedChart = new Chart(ctx,{
+    type:'bar',
+    data:{labels,datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{ x:{ stacked:true, grid:{display:false}}, y:{ stacked:true, grid:{color:'rgba(255,255,255,0.07)'}} },
+      plugins:{ legend:{position:'bottom'} }
+    }
+  });
+}
+
+// ===== 分組長條（通過率比較） =====
+let groupedChart;
+function buildGrouped(){
+  const ctx=document.getElementById('groupedChart');
+  groupedChart && groupedChart.destroy();
+  const labels = [...new Set(rows.map(r=>`${r.year}-${r.term}`))].sort();
+  const lvls=['初級','中級','中高級','高級','優級'];
+  const palette=(i)=>`hsl(${(i*57+200)%360} 70% 55%)`;
+  const datasets = lvls.map((lvl,i)=>({ label:lvl, backgroundColor:palette(i), data: labels.map(lbl=>{ const [y,t]=lbl.split('-'); const rec=rows.find(r=>r.year==y && r.term===t && r.level===lvl); return rec? rec.passRate: null; }) }));
+  groupedChart = new Chart(ctx,{
+    type:'bar',
+    data:{labels,datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ grid:{color:'rgba(255,255,255,0.07)'}, ticks:{ callback:v=> v+'%'}}, x:{ grid:{display:false}} },
+      plugins:{ legend:{position:'bottom'} }
+    }
+  });
+}
+
+// ===== 114 年第一次中高級細分 =====
+let splitChart;
+function buildSplit(){
+  const ctx=document.getElementById('splitChart');
+  splitChart && splitChart.destroy();
+  const items = rows.filter(r=>r.year===114 && r.term==='第一次' && r.level.startsWith('中高級-'));
+  const labels = items.map(i=>i.level.replace('中高級-',''));
+  splitChart = new Chart(ctx,{
+    type:'bar',
+    data:{ labels, datasets:[ {label:'通過人數', data: items.map(i=>i.passed||0)}, {label:'通過率（%）', data: items.map(i=>i.passRate||0), type:'line', yAxisID:'y1'} ] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ position:'left', grid:{color:'rgba(255,255,255,0.07)'} }, y1:{ position:'right', grid:{display:false}, ticks:{ callback:v=> v+'%'} } },
+      plugins:{ legend:{ position:'bottom'} }
+    }
+  });
+}
+
+// ===== 表格渲染 + 篩選 =====
+function renderTable(){
+  const tbody = document.querySelector('#dataTable tbody');
+  const yf = document.getElementById('yearFilter').value;
+  const tf = document.getElementById('termFilter').value;
+  const fmtInt = (n)=> n==null? '—' : Number(n).toLocaleString('zh-TW');
+  const fmtPct = (n)=> n==null? '—' : (Number(n).toFixed(2)+'%');
+  tbody.innerHTML='';
+  rows
+    .filter(r=>!r.level.includes('合計') && !r.level.includes('中高級-'))
+    .filter(r=> yf==='all' ? true : String(r.year)===yf)
+    .filter(r=> tf==='all' ? true : r.term===tf)
+    .sort((a,b)=> a.year!==b.year? a.year-b.year : a.term.localeCompare(b.term,'zh'))
+    .forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = `<td style="text-align:left">${r.year}</td>
+        <td style="text-align:left">${r.term}</td>
+        <td style="text-align:left">${r.level}</td>
+        <td>${fmtInt(r.applied)}</td>
+        <td>${fmtInt(r.attended)}</td>
+        <td>${fmtPct(r.examRate)}</td>
+        <td>${fmtInt(r.passed)}</td>
+        <td>${fmtPct(r.passRate)}</td>`;
+      tbody.appendChild(tr);
+    });
+}
+
+// ===== 匯出 CSV =====
+function toCSV(){
+  const cols = ['年度','場次','級別','報名人數','應試人數','應試率(%)','通過人數','通過率(%)'];
+  const body = rows
+    .filter(r=>!r.level.includes('合計'))
+    .map(r=>[ r.year, r.term, r.level, r.applied ?? '', r.attended ?? '', r.examRate ?? '', r.passed ?? '', r.passRate ?? '' ].join(','));
+  return [cols.join(','), ...body].join('\n');
+}
+function downloadCSV(){
+  const blob = new Blob([toCSV()], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='exam_stats_106_114.csv'; a.click(); URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
